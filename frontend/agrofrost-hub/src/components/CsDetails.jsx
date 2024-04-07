@@ -24,8 +24,6 @@ function CsDetails() {
     cs_price: storageData ? storageData.cs_price : 0,
   });
 
-  console.log(user);
-
   useEffect(() => {
     if (storageData) {
       setFormData((prevFormData) => ({
@@ -151,14 +149,13 @@ function CsDetails() {
   };
 
   const savePaymentDetails = async (paymentResponse) => {
-    console.log(paymentResponse);
     try {
       const data = {
         cs_id: storageData?.cs_id,
         c_id: user?.uid,
         amount: paymentResponse.amount,
         b_checkInDate: formData?.b_checkInDate,
-        b_checkOutDate: formData?.b_checkInDate,
+        b_checkOutDate: formData?.b_checkOutDate,
         b_goodsQuantity: formData?.b_goodsQuantity,
         p_id: paymentResponse.id,
       };
@@ -174,6 +171,46 @@ function CsDetails() {
       );
 
       toast.success(axiosResponse?.data?.message, {
+        position: "top-center",
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+        progress: undefined,
+        theme: "light",
+        transition: Bounce,
+      });
+
+      handleSendInvoice(axiosResponse?.data?.b_id);
+    } catch (error) {
+      toast.error(error?.response?.data?.error, {
+        position: "top-center",
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+        progress: undefined,
+        theme: "light",
+        transition: Bounce,
+      });
+    }
+  };
+
+  //sending Email
+  const handleSendInvoice = async (b_id) => {
+    try {
+      const response = await axios.post(
+        `${endpoint}/user/send/invoice/${b_id}`,
+        {},
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+      toast.success(response?.data?.message, {
         position: "top-center",
         autoClose: 5000,
         hideProgressBar: false,

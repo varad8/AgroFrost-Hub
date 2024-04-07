@@ -87,6 +87,43 @@ function OwnerBooking() {
     setBookingFilterData(filteredData);
   }, [filters, bookingData]);
 
+  const handleSendInvoice = async (b_id) => {
+    try {
+      const response = await axios.post(
+        `${endpoint}/user/send/invoice/${b_id}`,
+        {},
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+      toast.success(response?.data?.message, {
+        position: "top-center",
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+        progress: undefined,
+        theme: "light",
+        transition: Bounce,
+      });
+    } catch (error) {
+      toast.error(error?.response?.data?.error, {
+        position: "top-center",
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+        progress: undefined,
+        theme: "light",
+        transition: Bounce,
+      });
+    }
+  };
+
   return (
     <>
       <ToastContainer
@@ -161,11 +198,21 @@ function OwnerBooking() {
                 className="border hover:bg-greenpallete border-greenpallete bg-white rounded-md p-4 mb-4 shadow-lg"
               >
                 <div className="flex gap-3 items-center">
-                  <img
-                    src="/src/assets/boxes.png"
-                    className="w-24 h-24 bg-blue-50 p-3 rounded-md"
-                    alt="box"
-                  />
+                  <div>
+                    <img
+                      src="/src/assets/boxes.png"
+                      className="w-24 h-24 bg-blue-50 p-3 rounded-md"
+                      alt="box"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleSendInvoice(booking?.b_id)}
+                      className="bg-yellowpallete px-2 py-2 rounded-lg text-sm mt-2"
+                    >
+                      Send Invoice
+                    </button>
+                  </div>
+
                   <div>
                     <p>Booking ID: {booking.b_id}</p>
                     <p>Customer ID: {booking.c_id}</p>

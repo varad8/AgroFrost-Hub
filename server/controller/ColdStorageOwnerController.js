@@ -4,13 +4,25 @@ const path = require("path");
 const multer = require("multer");
 const fs = require("fs");
 const bcrypt = require("bcrypt");
-const { SECRET_KEY } = process.env;
+const { SECRET_KEY, YOUR_EMAIL, EMAIL_PASSWORD } = process.env;
 const ColdStorageOwner = require("../model/ColdStorageOwner");
 const { authenticateToken } = require("../middlewares/authentication");
 const ColdStorage = require("../model/ColdStorage");
 const Payment = require("../model/Payment");
 const Booking = require("../model/Booking");
 const { startOfMonth, endOfMonth } = require("date-fns");
+const OTP = require("../model/Otp");
+const nodemailer = require("nodemailer");
+const randomstring = require("randomstring");
+
+// Create Nodemailer transporter
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: YOUR_EMAIL,
+    pass: EMAIL_PASSWORD,
+  },
+});
 
 const router = express.Router();
 
@@ -265,6 +277,8 @@ router.post("/create/coldstorage", authenticateToken, async (req, res) => {
       cs_time,
       owner_ref,
     } = req.body;
+
+    console.log(req.body);
 
     if (
       !owner_id ||
@@ -584,6 +598,145 @@ router.get("/chartdata/:cs_id", authenticateToken, async (req, res) => {
   } catch (error) {
     console.error("Error fetching chart data:", error);
     res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Router for forgot password
+// Function For Forgotting the Customer Password
+async function sendOTP(email, otp) {
+  try {
+    const mailOptions = {
+      from: YOUR_EMAIL,
+      to: email,
+      subject: "Password Reset OTP",
+      text: `Your OTP for password reset is: ${otp}`,
+    };
+
+    await transporter.sendMail(mailOptions);
+    console.log("OTP sent successfully.");
+  } catch (error) {
+    console.error("Error sending OTP:", error);
+    throw new Error("Failed to send OTP. Please try again later.");
+  }
+}
+
+// Router handler for Forgot Password
+router.post("/forgot-password", async (req, res) => {
+  const { email } = req.body;
+
+  try {
+    if (!email) {
+      return res
+        .status(400)
+        .json({ error: "Please enter valid email address" });
+    }
+    // Check if the email exists in the database
+    const user = await ColdStorageOwner.findOne({ owner_email: email });
+    if (!user) {
+      return res
+        .status(400)
+        .json({ error: "User with this email does not exist." });
+    }
+
+    // Generate a random OTP
+    const otp = randomstring.generate({ length: 6, charset: "numeric" });
+
+    // Save or update OTP and its expiry time in the database
+    const otpExpiresAt = new Date(Date.now() + 600000); // OTP expires in 10 minutes
+    let otpRecord = await OTP.findOne({ email });
+    if (!otpRecord) {
+      otpRecord = new OTP({
+        email,
+        otp,
+        expiresAt: otpExpiresAt,
+        verified: false,
+      });
+    } else {
+      otpRecord.otp = otp;
+      otpRecord.expiresAt = otpExpiresAt;
+      otpRecord.verified = false;
+    }
+    await otpRecord.save();
+
+    // Send OTP to the user's email
+    await sendOTP(email, otp);
+
+    return res.status(200).json({
+      message: `OTP sent to your email ${email} . Please check your inbox.`,
+    });
+  } catch (error) {
+    console.error("Forgot password error:", error);
+    return res
+      .status(500)
+      .json({ error: "Internal server error. Please try again later." });
+  }
+});
+
+// Router handler for verifying OTP
+router.post("/verify/otp", async (req, res) => {
+  const { otp } = req.body;
+
+  try {
+    // Find the OTP record for the given email and OTP
+    const otpRecord = await OTP.findOne({ otp, verified: false });
+    if (!otpRecord) {
+      return res.status(400).json({ error: "Invalid OTP." });
+    }
+
+    // Mark OTP as verified
+    otpRecord.verified = true;
+    await otpRecord.save();
+
+    // Return OTP record details
+    return res
+      .status(200)
+      .json({ message: "OTP Verified Successfully", otpRecord });
+  } catch (error) {
+    console.error("OTP verification error:", error);
+    return res
+      .status(500)
+      .json({ error: "Internal server error. Please try again later." });
+  }
+});
+
+// Router handler for changing password
+router.post("/change-password", async (req, res) => {
+  const { email, otp, newPassword } = req.body;
+
+  try {
+    if (!email || !otp || !newPassword) {
+      return res.status(400).json({ error: "Invalid Data." });
+    }
+    // Find the OTP record for the given email and OTP
+    const otpRecord = await OTP.findOne({ email, otp, verified: true });
+    if (!otpRecord) {
+      return res.status(400).json({ error: "Invalid or unverified OTP." });
+    }
+
+    // Find the user by email
+    const user = await ColdStorageOwner.findOne({ owner_email: email });
+    if (!user) {
+      return res
+        .status(400)
+        .json({ error: "User with this email does not exist." });
+    }
+
+    // Hash the new password
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    // Update user's password
+    user.c_password = hashedPassword;
+    await user.save();
+
+    // Delete the OTP record
+    await otpRecord.deleteOne();
+
+    return res.status(200).json({ message: "Password changed successfully." });
+  } catch (error) {
+    console.error("Change password error:", error);
+    return res
+      .status(500)
+      .json({ error: "Internal server error. Please try again later." });
   }
 });
 

@@ -11,10 +11,12 @@ const Razorpay = require("razorpay");
 const moment = require("moment");
 const Booking = require("../model/Booking");
 const Payment = require("../model/Payment");
+const OTP = require("../model/Otp");
 const { startOfMonth, endOfMonth } = require("date-fns");
 const { RAZORPAY_ID_KEY, RAZORPAY_SECRET_KEY, SECRET_KEY } = process.env;
 const nodemailer = require("nodemailer");
 const { EMAIL_PASSWORD, YOUR_EMAIL } = process.env;
+const randomstring = require("randomstring");
 
 // Create Nodemailer transporter
 const transporter = nodemailer.createTransport({
@@ -307,13 +309,13 @@ router.post("/createorder", authenticateToken, async (req, res) => {
     return res.status(400).json({ error: "Invalid date format" });
   }
 
-  if (
-    checkInDate.isSameOrBefore(currentDate) ||
-    checkOutDate.isSameOrBefore(currentDate)
-  ) {
-    return res
-      .status(400)
-      .json({ error: "Check-in and check-out dates should be in the future" });
+  if (!checkInDate.isSame(currentDate, "day")) {
+    // Check if check-in date is today's date
+    if (checkInDate.isBefore(currentDate, "day")) {
+      return res
+        .status(400)
+        .json({ error: "Check-in date should not be in the past" });
+    }
   }
 
   if (checkOutDate.isSameOrBefore(checkInDate)) {
@@ -343,7 +345,6 @@ router.post("/createorder", authenticateToken, async (req, res) => {
     res.status(400).json({ error: error.message });
   }
 });
-
 //save payment
 router.post("/savepayment", authenticateToken, async (req, res) => {
   const {
@@ -403,6 +404,7 @@ router.post("/savepayment", authenticateToken, async (req, res) => {
 
     res.status(200).json({
       message: "Payment and booking saved successfully",
+      b_id: b_id,
     });
   } catch (error) {
     console.error("Error saving payment and booking:", error);
@@ -445,6 +447,162 @@ router.get("/booking/:c_id", authenticateToken, async (req, res) => {
     }));
 
     res.status(200).json(bookingsWithReadableDates);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+//router for sending invoice get
+router.post("/send/invoice/:b_id", authenticateToken, async (req, res) => {
+  try {
+    const { b_id } = req.params;
+
+    const bookingdata = await Booking.findOne({ b_id: b_id });
+
+    if (!bookingdata) {
+      return res.status(400).json({ message: "Booking Details Not Found" });
+    }
+
+    const paymentdata = await Payment.findOne({ b_id: b_id });
+
+    if (!paymentdata) {
+      return res.status(400).json({ message: "Payment Details Not Found" });
+    }
+
+    const customerdetails = await Customer.findOne({ c_id: paymentdata.c_id });
+
+    if (!customerdetails) {
+      return res.status(400).json({ message: "Customer Details Not Found" });
+    }
+
+    const coldstorage = await ColdStorage.findOne({
+      cs_id: paymentdata.cs_id,
+    }).populate({
+      path: "owner_ref",
+      model: "ColdStorageOwner",
+      select: "-owner_password",
+    });
+
+    if (!coldstorage) {
+      return res
+        .status(400)
+        .json({ message: "Cold Storage Details Not Found" });
+    }
+
+    console.log(bookingdata, paymentdata, customerdetails, coldstorage);
+
+    const subject = `Invoice for Booking Id ${bookingdata?.b_id}`;
+
+    // // Construct HTML email body
+    const htmlBody = `
+  <h2>Invoice</h2>
+  <table style="width:100%; border-collapse: collapse;">
+    <tr>
+      <th style="border: 1px solid #dddddd; text-align: left; padding: 8px;">Booking ID</th>
+      <td style="border: 1px solid #dddddd; text-align: left; padding: 8px;">${
+        bookingdata.b_id
+      }</td>
+    </tr>
+    <tr>
+      <th style="border: 1px solid #dddddd; text-align: left; padding: 8px;">Check-in Date</th>
+      <td style="border: 1px solid #dddddd; text-align: left; padding: 8px;">${new Date(
+        bookingdata.b_checkInDate
+      ).toDateString()}</td>
+    </tr>
+    <tr>
+      <th style="border: 1px solid #dddddd; text-align: left; padding: 8px;">Check-out Date</th>
+      <td style="border: 1px solid #dddddd; text-align: left; padding: 8px;">${new Date(
+        bookingdata.b_checkOutDate
+      ).toDateString()}</td>
+    </tr>
+    <tr>
+      <th style="border: 1px solid #dddddd; text-align: left; padding: 8px;">Quantity of Goods</th>
+      <td style="border: 1px solid #dddddd; text-align: left; padding: 8px;">${
+        bookingdata.b_goodsQuantity
+      }</td>
+    </tr>
+    <tr>
+      <th style="border: 1px solid #dddddd; text-align: left; padding: 8px;">Amount Paid</th>
+      <td style="border: 1px solid #dddddd; text-align: left; padding: 8px;">${
+        paymentdata.p_amount
+      }</td>
+    </tr>
+    <tr>
+      <th style="border: 1px solid #dddddd; text-align: left; padding: 8px;">Customer Name</th>
+      <td style="border: 1px solid #dddddd; text-align: left; padding: 8px;">${
+        customerdetails.c_fullName
+      }</td>
+    </tr>
+    <tr>
+      <th style="border: 1px solid #dddddd; text-align: left; padding: 8px;">Customer Email</th>
+      <td style="border: 1px solid #dddddd; text-align: left; padding: 8px;">${
+        customerdetails.c_email
+      }</td>
+    </tr>
+    <tr>
+      <th style="border: 1px solid #dddddd; text-align: left; padding: 8px;">Customer Contact No</th>
+      <td style="border: 1px solid #dddddd; text-align: left; padding: 8px;">${
+        customerdetails.c_contactNo
+      }</td>
+    </tr>
+    <tr>
+      <th style="border: 1px solid #dddddd; text-align: left; padding: 8px;">Cold Storage Name</th>
+      <td style="border: 1px solid #dddddd; text-align: left; padding: 8px;">${
+        coldstorage.cs_name
+      }</td>
+    </tr>
+    <tr>
+      <th style="border: 1px solid #dddddd; text-align: left; padding: 8px;">Cold Storage Address</th>
+      <td style="border: 1px solid #dddddd; text-align: left; padding: 8px;">${
+        coldstorage.cs_address
+      }</td>
+    </tr>
+    <tr>
+      <th style="border: 1px solid #dddddd; text-align: left; padding: 8px;">Cold Storage Price</th>
+      <td style="border: 1px solid #dddddd; text-align: left; padding: 8px;">${
+        coldstorage.cs_price
+      }</td>
+    </tr>
+    <tr>
+      <th style="border: 1px solid #dddddd; text-align: left; padding: 8px;">Cold Storage Capacity</th>
+      <td style="border: 1px solid #dddddd; text-align: left; padding: 8px;">${
+        coldstorage.cs_capacity
+      }</td>
+    </tr>
+    <tr>
+      <th style="border: 1px solid #dddddd; text-align: left; padding: 8px;">Owner Name</th>
+      <td style="border: 1px solid #dddddd; text-align: left; padding: 8px;">${
+        coldstorage.owner_ref.owner_fullName
+      }</td>
+    </tr>
+    <tr>
+      <th style="border: 1px solid #dddddd; text-align: left; padding: 8px;">Owner Email</th>
+      <td style="border: 1px solid #dddddd; text-align: left; padding: 8px;">${
+        coldstorage.owner_ref.owner_email
+      }</td>
+    </tr>
+    <tr>
+      <th style="border: 1px solid #dddddd; text-align: left; padding: 8px;">Owner Contact No</th>
+      <td style="border: 1px solid #dddddd; text-align: left; padding: 8px;">${
+        coldstorage.owner_ref.owner_contactNo
+      }</td>
+    </tr>
+  </table>
+`;
+
+    // // Define email options
+    const mailOptions = {
+      from: YOUR_EMAIL,
+      to: customerdetails?.c_email,
+      subject,
+      html: htmlBody,
+    };
+
+    // // Send email
+    await transporter.sendMail(mailOptions);
+
+    // Respond with success message
+    res.status(200).json({ message: "Email sent successfully" });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -595,6 +753,144 @@ router.post("/mail/sendEmail", async (req, res) => {
   } catch (error) {
     console.error("Error sending email:", error);
     res.status(500).json({ error: "Failed to send email" });
+  }
+});
+
+// Function For Forgotting the Customer Password
+async function sendOTP(email, otp) {
+  try {
+    const mailOptions = {
+      from: YOUR_EMAIL,
+      to: email,
+      subject: "Password Reset OTP",
+      text: `Your OTP for password reset is: ${otp}`,
+    };
+
+    await transporter.sendMail(mailOptions);
+    console.log("OTP sent successfully.");
+  } catch (error) {
+    console.error("Error sending OTP:", error);
+    throw new Error("Failed to send OTP. Please try again later.");
+  }
+}
+
+// Router handler for Forgot Password
+router.post("/forgot-password", async (req, res) => {
+  const { email } = req.body;
+
+  try {
+    if (!email) {
+      return res
+        .status(400)
+        .json({ error: "Please enter valid email address" });
+    }
+    // Check if the email exists in the database
+    const user = await Customer.findOne({ c_email: email });
+    if (!user) {
+      return res
+        .status(400)
+        .json({ error: "User with this email does not exist." });
+    }
+
+    // Generate a random OTP
+    const otp = randomstring.generate({ length: 6, charset: "numeric" });
+
+    // Save or update OTP and its expiry time in the database
+    const otpExpiresAt = new Date(Date.now() + 600000); // OTP expires in 10 minutes
+    let otpRecord = await OTP.findOne({ email });
+    if (!otpRecord) {
+      otpRecord = new OTP({
+        email,
+        otp,
+        expiresAt: otpExpiresAt,
+        verified: false,
+      });
+    } else {
+      otpRecord.otp = otp;
+      otpRecord.expiresAt = otpExpiresAt;
+      otpRecord.verified = false;
+    }
+    await otpRecord.save();
+
+    // Send OTP to the user's email
+    await sendOTP(email, otp);
+
+    return res.status(200).json({
+      message: `OTP sent to your email ${email} . Please check your inbox.`,
+    });
+  } catch (error) {
+    console.error("Forgot password error:", error);
+    return res
+      .status(500)
+      .json({ error: "Internal server error. Please try again later." });
+  }
+});
+
+// Router handler for verifying OTP
+router.post("/verify/otp", async (req, res) => {
+  const { otp } = req.body;
+
+  try {
+    // Find the OTP record for the given email and OTP
+    const otpRecord = await OTP.findOne({ otp, verified: false });
+    if (!otpRecord) {
+      return res.status(400).json({ error: "Invalid OTP." });
+    }
+
+    // Mark OTP as verified
+    otpRecord.verified = true;
+    await otpRecord.save();
+
+    // Return OTP record details
+    return res
+      .status(200)
+      .json({ message: "OTP Verified Successfully", otpRecord });
+  } catch (error) {
+    console.error("OTP verification error:", error);
+    return res
+      .status(500)
+      .json({ error: "Internal server error. Please try again later." });
+  }
+});
+
+// Router handler for changing password
+router.post("/change-password", async (req, res) => {
+  const { email, otp, newPassword } = req.body;
+
+  try {
+    if (!email || !otp || !newPassword) {
+      return res.status(400).json({ error: "Invalid Data." });
+    }
+    // Find the OTP record for the given email and OTP
+    const otpRecord = await OTP.findOne({ email, otp, verified: true });
+    if (!otpRecord) {
+      return res.status(400).json({ error: "Invalid or unverified OTP." });
+    }
+
+    // Find the user by email
+    const user = await Customer.findOne({ c_email: email });
+    if (!user) {
+      return res
+        .status(400)
+        .json({ error: "User with this email does not exist." });
+    }
+
+    // Hash the new password
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    // Update user's password
+    user.c_password = hashedPassword;
+    await user.save();
+
+    // Delete the OTP record
+    await otpRecord.deleteOne();
+
+    return res.status(200).json({ message: "Password changed successfully." });
+  } catch (error) {
+    console.error("Change password error:", error);
+    return res
+      .status(500)
+      .json({ error: "Internal server error. Please try again later." });
   }
 });
 

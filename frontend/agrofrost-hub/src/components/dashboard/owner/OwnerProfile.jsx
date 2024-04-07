@@ -19,15 +19,6 @@ function OwnerProfile() {
 
   const [previewImage, setPreviewImage] = useState(null);
   const [selectedFile, setSelectedFile] = useState(null);
-  const defaultTime = {
-    monday: "00:00-00:00",
-    tuesday: "00:00-00:00",
-    wednesday: "00:00-00:00",
-    thursday: "00:00-00:00",
-    friday: "00:00-00:00",
-    saturday: "00:00-00:00",
-    sunday: "00:00-00:00",
-  };
   const [coldStorageData, setColdStorageData] = useState({
     owner_id: "",
     cs_id: "",
@@ -50,6 +41,7 @@ function OwnerProfile() {
     cs_status: false,
   });
 
+  const [existData, setExistData] = useState(false);
   useEffect(() => {
     fetchProfile();
     fetchColdStorageProfile();
@@ -82,8 +74,10 @@ function OwnerProfile() {
         `${endpoint}/owner/storage/${user?.uid}`,
         config
       );
-
-      setColdStorageData(response?.data);
+      if (response?.data != null) {
+        setExistData(true);
+        setColdStorageData(response?.data);
+      }
     } catch (error) {
       console.error("Error fetching data:", error);
     }
@@ -103,32 +97,6 @@ function OwnerProfile() {
       ...prevFormData,
       [name]: value,
     }));
-  };
-
-  const handleColdStorageTimeChange = (day, period, value) => {
-    // Check if coldStorageData exists and if cs_time is null, use defaultTime
-    const updatedTime = {
-      ...(coldStorageData?.cs_time || defaultTime),
-    };
-
-    // Update the opening or closing time for the specified day
-    if (period === "opening") {
-      updatedTime[day] =
-        value +
-        "-" +
-        (updatedTime[day] ? updatedTime[day].split("-")[1] : "00:00");
-    } else if (period === "closing") {
-      updatedTime[day] =
-        (updatedTime[day] ? updatedTime[day].split("-")[0] : "00:00") +
-        "-" +
-        value;
-    }
-
-    // Update the state with the new cs_time object
-    setColdStorageData({
-      ...coldStorageData,
-      cs_time: updatedTime,
-    });
   };
 
   const handleSave = async () => {
@@ -327,6 +295,28 @@ function OwnerProfile() {
     }
   };
 
+  const handleColdStorageTimeChange = (day, period, value) => {
+    // Create a copy of the current cs_time object
+    const updatedTime = { ...coldStorageData.cs_time };
+
+    // Update the opening or closing time for the specified day
+    if (period === "opening") {
+      updatedTime[day] = `${value}-${
+        updatedTime[day]?.split("-")[1] || "00:00"
+      }`;
+    } else if (period === "closing") {
+      updatedTime[day] = `${
+        updatedTime[day]?.split("-")[0] || "00:00"
+      }-${value}`;
+    }
+
+    // Update the state with the new cs_time object
+    setColdStorageData({
+      ...coldStorageData,
+      cs_time: updatedTime,
+    });
+  };
+
   const inputRef = useRef(null);
 
   return (
@@ -445,38 +435,40 @@ function OwnerProfile() {
                 <h3 className="font-medium text-black">Storage Details</h3>
               </div>
               <div className="flex flex-col gap-5 p-6">
-                <div className="mt-5 flex items-center justify-center">
-                  <div className="relative rounded-md w-full h-[200px] object-fill object-center border">
-                    {previewImage && (
-                      <button
-                        onClick={UploadImage}
-                        className="absolute inset-0 bg-black bg-opacity-50 text-white flex justify-center items-center z-10"
-                      >
-                        Upload
-                      </button>
-                    )}
-                    <img
-                      onClick={() => inputRef.current.click()}
-                      src={
-                        previewImage || coldStorageData?.cs_image
-                          ? previewImage
+                {existData && (
+                  <div className="mt-5 flex items-center justify-center">
+                    <div className="relative rounded-md w-full h-[200px] object-fill object-center border">
+                      {previewImage && (
+                        <button
+                          onClick={UploadImage}
+                          className="absolute inset-0 bg-black bg-opacity-50 text-white flex justify-center items-center z-10"
+                        >
+                          Upload
+                        </button>
+                      )}
+                      <img
+                        onClick={() => inputRef.current.click()}
+                        src={
+                          previewImage || coldStorageData?.cs_image
                             ? previewImage
-                            : `${endpoint}/user/images/${coldStorageData?.cs_image}`
-                          : "/src/assets/select.png"
-                      }
-                      className="rounded-md w-full h-full object-fill object-center border"
-                      alt="Profile"
+                              ? previewImage
+                              : `${endpoint}/user/images/${coldStorageData?.cs_image}`
+                            : "/src/assets/select.png"
+                        }
+                        className="rounded-md w-full h-full object-fill object-center border"
+                        alt="Profile"
+                      />
+                    </div>
+
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={selectImage}
+                      ref={inputRef}
+                      style={{ display: "none" }}
                     />
                   </div>
-
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={selectImage}
-                    ref={inputRef}
-                    style={{ display: "none" }}
-                  />
-                </div>
+                )}
 
                 <div className="mt-5 grid md:grid-cols-2 md:gap-6">
                   {/* Display input fields */}
@@ -548,53 +540,57 @@ function OwnerProfile() {
                     </select>
                   </div>
 
-                  {/* Timing Fields */}
-                  {/* Timing Fields */}
-                  {(coldStorageData?.cs_time
-                    ? Object.entries(coldStorageData?.cs_time)
-                    : Object.entries(defaultTime)
-                  ).map(([day, time], index) => {
-                    if (day === "_id") return null; // Skip rendering _id input field
-                    return (
-                      <React.Fragment key={index}>
-                        <div className="flex flex-col">
-                          <label className="font-medium">{day}</label>
-                          <div className="grid grid-cols-2 gap-3">
-                            <input
-                              type="time"
-                              name={`${day}_opening`}
-                              value={time.split("-")[0]}
-                              onChange={(e) =>
-                                handleColdStorageTimeChange(
-                                  day,
-                                  "opening",
-                                  e.target.value +
-                                    "-" +
-                                    (time ? time.split("-")[1] : "00:00")
-                                )
-                              }
-                              className="border border-gray-300 rounded-md px-3 py-2"
-                            />
-                            <input
-                              type="time"
-                              name={`${day}_closing`}
-                              value={time.split("-")[1]}
-                              onChange={(e) =>
-                                handleColdStorageTimeChange(
-                                  day,
-                                  "closing",
-                                  (time ? time.split("-")[0] : "00:00") +
-                                    "-" +
-                                    e.target.value
-                                )
-                              }
-                              className="border border-gray-300 rounded-md px-3 py-2"
-                            />
-                          </div>
+                  {Object.entries(coldStorageData?.cs_time).map(
+                    ([day, time], index) => (
+                      <div key={index} className="flex flex-col">
+                        <label className="font-medium">{day}</label>
+                        <div className="grid grid-cols-2 gap-3">
+                          <select
+                            value={time.split("-")[0]}
+                            onChange={(e) =>
+                              handleColdStorageTimeChange(
+                                day,
+                                "opening",
+                                e.target.value
+                              )
+                            }
+                            className="border border-gray-300 rounded-md px-3 py-2"
+                          >
+                            {/* Render select options for opening time */}
+                            {[...Array(24).keys()].map((hour) => (
+                              <option
+                                key={hour}
+                                value={`${hour.toString().padStart(2, "0")}:00`}
+                              >
+                                {`${hour.toString().padStart(2, "0")}:00`}
+                              </option>
+                            ))}
+                          </select>
+                          <select
+                            value={time.split("-")[1]}
+                            onChange={(e) =>
+                              handleColdStorageTimeChange(
+                                day,
+                                "closing",
+                                e.target.value
+                              )
+                            }
+                            className="border border-gray-300 rounded-md px-3 py-2"
+                          >
+                            {/* Render select options for closing time */}
+                            {[...Array(24).keys()].map((hour) => (
+                              <option
+                                key={hour}
+                                value={`${hour.toString().padStart(2, "0")}:00`}
+                              >
+                                {`${hour.toString().padStart(2, "0")}:00`}
+                              </option>
+                            ))}
+                          </select>
                         </div>
-                      </React.Fragment>
-                    );
-                  })}
+                      </div>
+                    )
+                  )}
                 </div>
 
                 {/* Actions Button */}
