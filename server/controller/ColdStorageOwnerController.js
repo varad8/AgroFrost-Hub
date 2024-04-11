@@ -342,6 +342,20 @@ router.get("/storage/:owner_id", authenticateToken, async (req, res) => {
   }
 });
 
+router.get("/get/storage/:owner_id", authenticateToken, async (req, res) => {
+  try {
+    const { owner_id } = req.params;
+    const storage = await ColdStorage.findOne({ owner_id: owner_id }).populate({
+      path: "owner_ref",
+      select: "-owner_password",
+    });
+
+    res.status(200).json(storage);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Update details of a cold storage facility
 router.put(
   "/update/coldstorage/:cs_id",
@@ -489,19 +503,67 @@ router.get("/booking/all/:cs_id", authenticateToken, async (req, res) => {
   }
 });
 
+// router for update booking b_status
+// Route to update booking status by b_id
+router.put("/booking/:b_id/status", authenticateToken, async (req, res) => {
+  try {
+    const { b_id } = req.params;
+    const { b_status } = req.body;
+
+    // Validate the provided status
+    const allowedStatus = ["Visited"];
+    if (!allowedStatus.includes(b_status)) {
+      return res.status(400).json({ message: "Invalid booking status" });
+    }
+
+    // Update the booking status
+    const updatedBooking = await Booking.findOneAndUpdate(
+      { b_id },
+      { $set: { b_status } },
+      { new: true } // Return the updated document
+    );
+
+    if (!updatedBooking) {
+      return res.status(404).json({ message: "Booking not found" });
+    }
+
+    return res.json({ message: "Booking Cancelled" });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+});
+
 router.get("/payment/all/:cs_id", authenticateToken, async (req, res) => {
   try {
     const { cs_id } = req.params;
 
-    const payments = await Payment.find({ cs_id });
+    // Fetch bookings for the customer
+    const bookings = await Booking.find({ cs_id });
 
-    if (!payments) {
+    if (!bookings || bookings.length === 0) {
+      return res.status(404).json({ error: "Bookings not found" });
+    }
+
+    // Extract booking IDs
+    const bookingIds = bookings.map((booking) => booking.b_id);
+
+    // Fetch payments for the booking IDs
+    const payments = await Payment.find({ b_id: { $in: bookingIds } });
+
+    if (!payments || payments.length === 0) {
       return res.status(404).json({ error: "Payments not found" });
     }
 
-    // Convert ISO date strings to readable local format
-    const paymentWithRedableDates = payments.map((payment) => ({
-      ...payment.toObject(),
+    // Add b_status to each payment
+    const paymentsWithStatus = payments.map((payment) => {
+      const booking = bookings.find((booking) => booking.b_id === payment.b_id);
+      const b_status = booking ? booking.b_status : null;
+      return { ...payment.toObject(), b_status };
+    });
+
+    // Convert ISO date strings to readable local format for payments
+    const paymentsWithReadableDates = paymentsWithStatus.map((payment) => ({
+      ...payment,
       p_date: new Date(payment.p_date).toLocaleDateString("en-US", {
         month: "long",
         day: "numeric",
@@ -509,7 +571,7 @@ router.get("/payment/all/:cs_id", authenticateToken, async (req, res) => {
       }),
     }));
 
-    res.status(200).json(paymentWithRedableDates);
+    res.status(200).json(paymentsWithReadableDates);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -527,7 +589,7 @@ router.get("/chartdata/:cs_id", authenticateToken, async (req, res) => {
     // Aggregate bookings based on check-in date month and year wise
     const bookingData = await Booking.aggregate([
       {
-        $match: { cs_id }, // Filter by cs_id
+        $match: { cs_id, b_status: { $in: ["Visited", "Booked"] } }, // Filter by cs_id and statuses Visited or Booked
       },
       {
         $group: {
@@ -548,21 +610,60 @@ router.get("/chartdata/:cs_id", authenticateToken, async (req, res) => {
       },
     ]);
 
-    // Aggregate payments made this month
-    const paymentData = await Payment.aggregate([
+    // Aggregate bookings based on check-in date month and year wise, grouped by status
+    const bookingStatusData = await Booking.aggregate([
+      {
+        $match: { cs_id }, // Filter by cs_id
+      },
+      {
+        $group: {
+          _id: {
+            month: { $month: "$b_checkInDate" },
+            year: { $year: "$b_checkInDate" },
+            status: "$b_status",
+          },
+          count: { $sum: 1 }, // Count the bookings for each status
+        },
+      },
+      {
+        $project: {
+          _id: 0, // Exclude _id field
+          month: "$_id.month",
+          year: "$_id.year",
+          status: "$_id.status",
+          count: 1,
+        },
+      },
+    ]);
+
+    // Aggregate payments made this month, filtering by bookings with statuses Visited or Booked
+    const paymentData = await Booking.aggregate([
+      {
+        $match: { cs_id, b_status: { $in: ["Visited", "Booked"] } }, // Filter by cs_id and statuses Visited or Booked
+      },
+      {
+        $lookup: {
+          from: "payments", // Assuming the collection name is "payments"
+          localField: "b_id",
+          foreignField: "b_id",
+          as: "payments",
+        },
+      },
+      {
+        $unwind: "$payments",
+      },
       {
         $match: {
-          cs_id,
-          p_date: { $gte: startDateOfMonth, $lte: endDateOfMonth }, // Filter by cs_id and payment date within the current month
+          "payments.p_date": { $gte: startDateOfMonth, $lte: endDateOfMonth }, // Filter payments within the current month
         },
       },
       {
         $group: {
           _id: {
-            month: { $month: "$p_date" },
-            year: { $year: "$p_date" },
+            month: { $month: "$payments.p_date" },
+            year: { $year: "$payments.p_date" },
           },
-          totalPayment: { $sum: "$p_amount" }, // Calculate total payment made this month
+          totalPayment: { $sum: "$payments.p_amount" }, // Calculate total payment made this month
         },
       },
       {
@@ -590,6 +691,7 @@ router.get("/chartdata/:cs_id", authenticateToken, async (req, res) => {
 
     res.status(200).json({
       bookingData,
+      bookingStatusData,
       paymentData,
       lastBooking,
       totalBookingCount,
@@ -601,7 +703,6 @@ router.get("/chartdata/:cs_id", authenticateToken, async (req, res) => {
   }
 });
 
-// Router for forgot password
 // Function For Forgotting the Customer Password
 async function sendOTP(email, otp) {
   try {
@@ -737,6 +838,171 @@ router.post("/change-password", async (req, res) => {
     return res
       .status(500)
       .json({ error: "Internal server error. Please try again later." });
+  }
+});
+
+/**------------------[Reports Router]----------------- */
+// Route for weekly report with mandatory CS_ID filter
+router.get("/reports/weekly/:cs_id", authenticateToken, async (req, res) => {
+  try {
+    const { cs_id } = req.params; // Get CS_ID from URL parameter
+    const today = new Date();
+    const oneWeekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const weeklyData = await Booking.aggregate([
+      {
+        $match: {
+          b_checkInDate: { $gte: oneWeekAgo, $lte: today },
+          cs_id: cs_id, // Filter by CS_ID
+          b_status: { $in: ["Visited", "Booked"] },
+        },
+      },
+      {
+        $lookup: {
+          from: "payments",
+          localField: "b_id",
+          foreignField: "b_id",
+          as: "payments",
+        },
+      },
+    ]);
+    res.json({ weeklyData });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Route for monthly report with mandatory CS_ID filter
+router.get("/reports/monthly/:cs_id", authenticateToken, async (req, res) => {
+  try {
+    const { cs_id } = req.params; // Get CS_ID from URL parameter
+    const today = new Date();
+    const oneMonthAgo = new Date(
+      today.getFullYear(),
+      today.getMonth() - 1,
+      today.getDate()
+    );
+    const monthlyData = await Booking.aggregate([
+      {
+        $match: {
+          b_checkInDate: { $gte: oneMonthAgo, $lte: today },
+          cs_id: cs_id, // Filter by CS_ID
+          b_status: { $in: ["Visited", "Booked"] },
+        },
+      },
+      {
+        $lookup: {
+          from: "payments",
+          localField: "b_id",
+          foreignField: "b_id",
+          as: "payments",
+        },
+      },
+    ]);
+    res.json({ monthlyData });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Route for yearly report with mandatory CS_ID filter
+router.get("/reports/yearly/:cs_id", authenticateToken, async (req, res) => {
+  try {
+    const { cs_id } = req.params; // Get CS_ID from URL parameter
+    const today = new Date();
+    const oneYearAgo = new Date(
+      today.getFullYear() - 1,
+      today.getMonth(),
+      today.getDate()
+    );
+    const yearlyData = await Booking.aggregate([
+      {
+        $match: {
+          b_checkInDate: { $gte: oneYearAgo, $lte: today },
+          cs_id: cs_id,
+          b_status: { $in: ["Visited", "Booked"] },
+        },
+      },
+      {
+        $lookup: {
+          from: "payments",
+          localField: "b_id",
+          foreignField: "b_id",
+          as: "payments",
+        },
+      },
+    ]);
+    res.json({ yearlyData });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+router.get("/reports/yearly/:year", authenticateToken, async (req, res) => {
+  try {
+    const { year } = req.params; // Get year from URL parameter
+    const { csId } = req.query; // Get CS_ID from query parameters
+
+    const startDate = new Date(year, 0, 1); // Start of the year
+    const endDate = new Date(year, 11, 31); // End of the year
+
+    const matchStage = {
+      $match: {
+        b_checkInDate: { $gte: startDate, $lte: endDate }, // Filter by year
+        cs_id: csId, // Filter by CS_ID
+        b_status: { $in: ["Visited", "Booked"] },
+      },
+    };
+
+    const yearlyData = await Booking.aggregate([
+      matchStage,
+      {
+        $lookup: {
+          from: "payments",
+          localField: "b_id",
+          foreignField: "b_id",
+          as: "payments",
+        },
+      },
+    ]);
+    res.json(yearlyData);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Route for monthly report with optional CS_ID filter
+router.get("/reports/monthly/:year/:month", async (req, res) => {
+  try {
+    const { year, month } = req.params; // Get year and month from URL parameters
+    const { csId } = req.query; // Get CS_ID from query parameters
+
+    // Calculate the start and end dates for the specified month and year
+    const startDate = new Date(year, month - 1, 1); // Month is 0-indexed, so subtract 1
+    const endDate = new Date(year, month, 0); // Get the last day of the month
+
+    const matchStage = {
+      $match: {
+        b_checkInDate: { $gte: startDate, $lte: endDate }, // Filter by month and year
+        cs_id: csId, // Filter by CS_ID
+        b_status: { $in: ["Visited", "Booked"] },
+      },
+    };
+
+    const monthlyData = await Booking.aggregate([
+      matchStage,
+      {
+        $lookup: {
+          from: "payments",
+          localField: "b_id",
+          foreignField: "b_id",
+          as: "payments",
+        },
+      },
+    ]);
+
+    res.json(monthlyData);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
   }
 });
 

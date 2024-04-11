@@ -3,6 +3,7 @@ const jwt = require("jsonwebtoken");
 const path = require("path");
 const multer = require("multer");
 const fs = require("fs");
+const pdf = require("html-pdf");
 const bcrypt = require("bcrypt");
 const { authenticateToken } = require("../middlewares/authentication");
 const Customer = require("../model/Customer");
@@ -452,6 +453,36 @@ router.get("/booking/:c_id", authenticateToken, async (req, res) => {
   }
 });
 
+// router for update booking b_status
+// Route to update booking status by b_id
+router.put("/booking/:b_id/status", authenticateToken, async (req, res) => {
+  try {
+    const { b_id } = req.params;
+    const { b_status } = req.body;
+
+    // Validate the provided status
+    const allowedStatus = ["Cancelled"];
+    if (!allowedStatus.includes(b_status)) {
+      return res.status(400).json({ message: "Invalid booking status" });
+    }
+
+    // Update the booking status
+    const updatedBooking = await Booking.findOneAndUpdate(
+      { b_id },
+      { $set: { b_status } },
+      { new: true } // Return the updated document
+    );
+
+    if (!updatedBooking) {
+      return res.status(404).json({ message: "Booking not found" });
+    }
+
+    return res.json({ message: "Booking Cancelled" });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+});
+
 //router for sending invoice get
 router.post("/send/invoice/:b_id", authenticateToken, async (req, res) => {
   try {
@@ -590,19 +621,31 @@ router.post("/send/invoice/:b_id", authenticateToken, async (req, res) => {
   </table>
 `;
 
-    // // Define email options
-    const mailOptions = {
-      from: YOUR_EMAIL,
-      to: customerdetails?.c_email,
-      subject,
-      html: htmlBody,
-    };
+    // Convert HTML to PDF
+    pdf.create(htmlBody).toBuffer(async (err, buffer) => {
+      if (err) {
+        return res.status(500).json({ error: "Error generating PDF" });
+      }
 
-    // // Send email
-    await transporter.sendMail(mailOptions);
+      // Define email options
+      const mailOptions = {
+        from: YOUR_EMAIL,
+        to: customerdetails?.c_email,
+        subject,
+        html: htmlBody,
+        attachments: [{ filename: "invoice.pdf", content: buffer }],
+      };
 
-    // Respond with success message
-    res.status(200).json({ message: "Email sent successfully" });
+      // Send email
+      try {
+        await transporter.sendMail(mailOptions);
+        // Respond with success message
+        res.status(200).json({ message: "Email sent successfully" });
+      } catch (error) {
+        console.log(error);
+        res.status(500).json({ error: "Error sending email" });
+      }
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -612,15 +655,33 @@ router.get("/payment/:c_id", authenticateToken, async (req, res) => {
   try {
     const { c_id } = req.params;
 
-    const payments = await Payment.find({ c_id });
+    // Fetch bookings for the customer
+    const bookings = await Booking.find({ c_id });
 
-    if (!payments) {
+    if (!bookings || bookings.length === 0) {
+      return res.status(404).json({ error: "Bookings not found" });
+    }
+
+    // Extract booking IDs
+    const bookingIds = bookings.map((booking) => booking.b_id);
+
+    // Fetch payments for the booking IDs
+    const payments = await Payment.find({ b_id: { $in: bookingIds } });
+
+    if (!payments || payments.length === 0) {
       return res.status(404).json({ error: "Payments not found" });
     }
 
-    // Convert ISO date strings to readable local format
-    const paymentWithRedableDates = payments.map((payment) => ({
-      ...payment.toObject(),
+    // Add b_status to each payment
+    const paymentsWithStatus = payments.map((payment) => {
+      const booking = bookings.find((booking) => booking.b_id === payment.b_id);
+      const b_status = booking ? booking.b_status : null;
+      return { ...payment.toObject(), b_status };
+    });
+
+    // Convert ISO date strings to readable local format for payments
+    const paymentsWithReadableDates = paymentsWithStatus.map((payment) => ({
+      ...payment,
       p_date: new Date(payment.p_date).toLocaleDateString("en-US", {
         month: "long",
         day: "numeric",
@@ -628,11 +689,37 @@ router.get("/payment/:c_id", authenticateToken, async (req, res) => {
       }),
     }));
 
-    res.status(200).json(paymentWithRedableDates);
+    res.status(200).json(paymentsWithReadableDates);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
+
+// router.get("/payment/:c_id", authenticateToken, async (req, res) => {
+//   try {
+//     const { c_id } = req.params;
+
+//     const payments = await Payment.find({ c_id });
+
+//     if (!payments) {
+//       return res.status(404).json({ error: "Payments not found" });
+//     }
+
+//     // Convert ISO date strings to readable local format
+//     const paymentWithRedableDates = payments.map((payment) => ({
+//       ...payment.toObject(),
+//       p_date: new Date(payment.p_date).toLocaleDateString("en-US", {
+//         month: "long",
+//         day: "numeric",
+//         year: "numeric",
+//       }),
+//     }));
+
+//     res.status(200).json(paymentWithRedableDates);
+//   } catch (error) {
+//     res.status(500).json({ error: error.message });
+//   }
+// });
 
 router.get("/chartdata/:c_id", authenticateToken, async (req, res) => {
   const { c_id } = req.params;
@@ -643,10 +730,38 @@ router.get("/chartdata/:c_id", authenticateToken, async (req, res) => {
     const startDateOfMonth = startOfMonth(currentDate);
     const endDateOfMonth = endOfMonth(currentDate);
 
+    // Aggregate booking status data based on booking status, month, year, and cs_id
+    const bookingStatusData = await Booking.aggregate([
+      {
+        $match: { c_id, b_status: { $in: ["Visited", "Booked", "Cancelled"] } }, // Filter by cs_id and booking status
+      },
+      {
+        $group: {
+          _id: {
+            cs_id: "$cs_id",
+            month: { $month: "$b_checkInDate" },
+            year: { $year: "$b_checkInDate" },
+            status: "$b_status",
+          },
+          count: { $sum: 1 }, // Count the bookings for each status
+        },
+      },
+      {
+        $project: {
+          _id: 0, // Exclude _id field
+          cs_id: "$_id.cs_id",
+          month: "$_id.month",
+          year: "$_id.year",
+          status: "$_id.status",
+          count: 1,
+        },
+      },
+    ]);
+
     // Aggregate bookings based on check-in date month and year wise
     const bookingData = await Booking.aggregate([
       {
-        $match: { c_id }, // Filter by c_id
+        $match: { c_id, b_status: { $in: ["Visited", "Booked"] } }, // Filter by c_id
       },
       {
         $group: {
@@ -667,21 +782,33 @@ router.get("/chartdata/:c_id", authenticateToken, async (req, res) => {
       },
     ]);
 
-    // Aggregate payments made this month
-    const paymentData = await Payment.aggregate([
+    const paymentData = await Booking.aggregate([
+      {
+        $match: { c_id, b_status: { $in: ["Visited", "Booked"] } },
+      },
+      {
+        $lookup: {
+          from: "payments", // Assuming the collection name is "payments"
+          localField: "b_id",
+          foreignField: "b_id",
+          as: "payments",
+        },
+      },
+      {
+        $unwind: "$payments",
+      },
       {
         $match: {
-          c_id,
-          p_date: { $gte: startDateOfMonth, $lte: endDateOfMonth }, // Filter by cs_id and payment date within the current month
+          "payments.p_date": { $gte: startDateOfMonth, $lte: endDateOfMonth }, // Filter payments within the current month
         },
       },
       {
         $group: {
           _id: {
-            month: { $month: "$p_date" },
-            year: { $year: "$p_date" },
+            month: { $month: "$payments.p_date" },
+            year: { $year: "$payments.p_date" },
           },
-          totalPayment: { $sum: "$p_amount" }, // Calculate total payment made this month
+          totalPayment: { $sum: "$payments.p_amount" }, // Calculate total payment made this month
         },
       },
       {
@@ -713,6 +840,7 @@ router.get("/chartdata/:c_id", authenticateToken, async (req, res) => {
       lastBooking,
       totalBookingCount,
       lastPayment,
+      bookingStatusData,
     });
   } catch (error) {
     console.error("Error fetching chart data:", error);
@@ -891,6 +1019,183 @@ router.post("/change-password", async (req, res) => {
     return res
       .status(500)
       .json({ error: "Internal server error. Please try again later." });
+  }
+});
+
+// Route to check capacity for a given date range and cs_id
+router.get("/capacity/:cs_id", async (req, res) => {
+  try {
+    const { cs_id } = req.params;
+    const { startDate, endDate } = req.query;
+
+    // Convert string dates to Date objects
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+
+    // Check if start date is before end date
+    if (start >= end) {
+      return res
+        .status(400)
+        .json({ message: "End date must be after start date" });
+    }
+
+    // Find the Cold Storage by cs_id
+    const coldStorage = await ColdStorage.findOne({ cs_id });
+    if (!coldStorage) {
+      return res.status(404).json({ message: "Cold storage not found" });
+    }
+
+    // Get total booked goods quantity for this cs_id and within the date range
+    const totalBookedGoodsQuantity = await Booking.aggregate([
+      {
+        $match: {
+          cs_id,
+          b_checkInDate: { $lte: end }, // Check if check-in date is before or on the end date
+          b_checkOutDate: { $gte: start }, // Check if check-out date is after or on the start date
+        },
+      },
+      { $group: { _id: null, total: { $sum: "$b_goodsQuantity" } } },
+    ]);
+
+    // Calculate remaining area in tons
+    const totalBookedKg = totalBookedGoodsQuantity[0]?.total || 0; // Total booked goods quantity in kg
+    const remainingCapacity = coldStorage.cs_capacity - totalBookedKg; // Remaining capacity in kg
+
+    return res.json({ remainingCapacity });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+});
+
+// Route to check capacity for the current date and cs_id
+router.get("/capacity/current/:cs_id", async (req, res) => {
+  try {
+    const { cs_id } = req.params;
+
+    // Get today's date
+    const today = new Date();
+
+    // Find the Cold Storage by cs_id
+    const coldStorage = await ColdStorage.findOne({ cs_id });
+    if (!coldStorage) {
+      return res.status(404).json({ message: "Cold storage not found" });
+    }
+
+    // Get total booked goods quantity for this cs_id and today's date
+    const totalBookedGoodsQuantity = await Booking.aggregate([
+      {
+        $match: {
+          cs_id,
+          b_checkInDate: { $lte: today }, // Check if check-in date is before or on today's date
+          b_checkOutDate: { $gte: today }, // Check if check-out date is after or on today's date
+        },
+      },
+      { $group: { _id: null, total: { $sum: "$b_goodsQuantity" } } },
+    ]);
+
+    // Calculate remaining area in tons
+    const totalBookedKg = totalBookedGoodsQuantity[0]?.total || 0; // Total booked goods quantity in kg
+    const remainingCapacity = coldStorage.cs_capacity - totalBookedKg; // Remaining capacity in kg
+
+    return res.json({ remainingCapacity });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+});
+
+/**------------------------[Reports Router]--------------------- */
+// Route for weekly report with mandatory c_id filter
+router.get("/reports/weekly/:c_id", authenticateToken, async (req, res) => {
+  try {
+    const { c_id } = req.params; // Get c_id from URL parameter
+    const today = new Date();
+    const oneWeekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const weeklyData = await Booking.aggregate([
+      {
+        $match: {
+          b_checkInDate: { $gte: oneWeekAgo, $lte: today },
+          c_id: c_id, // Filter by c_id
+          b_status: { $in: ["Visited", "Booked"] },
+        },
+      },
+      {
+        $lookup: {
+          from: "payments",
+          localField: "b_id",
+          foreignField: "b_id",
+          as: "payments",
+        },
+      },
+    ]);
+    res.json({ weeklyData });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Route for monthly report with mandatory c_id filter
+router.get("/reports/monthly/:c_id", authenticateToken, async (req, res) => {
+  try {
+    const { c_id } = req.params; // Get c_id from URL parameter
+    const today = new Date();
+    const oneMonthAgo = new Date(
+      today.getFullYear(),
+      today.getMonth() - 1,
+      today.getDate()
+    );
+    const monthlyData = await Booking.aggregate([
+      {
+        $match: {
+          b_checkInDate: { $gte: oneMonthAgo, $lte: today },
+          c_id: c_id, // Filter by c_id
+          b_status: { $in: ["Visited", "Booked"] },
+        },
+      },
+      {
+        $lookup: {
+          from: "payments",
+          localField: "b_id",
+          foreignField: "b_id",
+          as: "payments",
+        },
+      },
+    ]);
+    res.json({ monthlyData });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Route for yearly report with mandatory c_id filter
+router.get("/reports/yearly/:c_id", authenticateToken, async (req, res) => {
+  try {
+    const { c_id } = req.params; // Get c_id from URL parameter
+    const today = new Date();
+    const oneYearAgo = new Date(
+      today.getFullYear() - 1,
+      today.getMonth(),
+      today.getDate()
+    );
+    const yearlyData = await Booking.aggregate([
+      {
+        $match: {
+          b_checkInDate: { $gte: oneYearAgo, $lte: today },
+          c_id: c_id,
+          b_status: { $in: ["Visited", "Booked"] },
+        },
+      },
+      {
+        $lookup: {
+          from: "payments",
+          localField: "b_id",
+          foreignField: "b_id",
+          as: "payments",
+        },
+      },
+    ]);
+    res.json({ yearlyData });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
   }
 });
 

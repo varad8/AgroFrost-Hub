@@ -15,6 +15,7 @@ function OwnerPayment() {
     cs_id: "",
     c_id: "",
     p_date: "",
+    b_status: "",
   });
 
   useEffect(() => {
@@ -81,11 +82,25 @@ function OwnerPayment() {
         payment.b_id.includes(filters.b_id) &&
         payment.cs_id.includes(filters.cs_id) &&
         payment.c_id.includes(filters.c_id) &&
-        payment.p_date.includes(filters.p_date)
+        payment.p_date.includes(filters.p_date) &&
+        payment.b_status.includes(filters.b_status)
       );
     });
     setFilterPaymentData(filteredData);
   }, [filters, paymentData]);
+
+  const getStatusColorClass = (status) => {
+    switch (status) {
+      case "Booked":
+        return "text-blue-500 border border-blue-600 px-2 rounded-lg";
+      case "Cancelled":
+        return "text-red-500 border border-red-600 px-2 rounded-lg";
+      case "Visited":
+        return "text-green-500 border border-green-600 px-2 rounded-lg";
+      default:
+        return "text-gray-500 border border-gray-600 px-2 rounded-lg";
+    }
+  };
 
   return (
     <>
@@ -150,6 +165,17 @@ function OwnerPayment() {
               placeholder="Payment Date"
               className="border border-gray-300 rounded-md px-3 py-2"
             />
+
+            <select
+              name="b_status"
+              onChange={handleFilterChange}
+              className="border border-gray-300 rounded-md px-3 py-2"
+            >
+              <option value="">All</option>
+              <option value="Booked">Booked</option>
+              <option value="Visited">Visited</option>
+              <option value="Cancelled">Cancelled</option>
+            </select>
           </div>
         </div>
         {/* Display Payments */}
@@ -161,17 +187,24 @@ function OwnerPayment() {
                 key={payment._id}
                 className="flex gap-3 shadow-lg items-center border border-greenpallete bg-white hover:bg-greenpallete rounded-md p-4 mb-4"
               >
-                <img
-                  src="/src/assets/creditcard.png"
-                  className="w-24 h-24"
-                  alt="payment done"
-                />
-                <div>
-                  <p>Payment ID: {payment.p_id}</p>
-                  <p>Booking ID: {payment.b_id}</p>
-                  <p>CS ID: {payment.cs_id}</p>
-                  <p>Customer ID: {payment.c_id}</p>
-                  <p>Payment Date: {payment.p_date}</p>
+                <div className="flex gap-3 items-center relative">
+                  <div className="absolute top-0 left-0">
+                    <span className={getStatusColorClass(payment.b_status)}>
+                      {payment.b_status}
+                    </span>
+                  </div>
+                  <img
+                    src="/src/assets/creditcard.png"
+                    className="w-24 h-24"
+                    alt="payment done"
+                  />
+                  <div>
+                    <p>Payment ID: {payment.p_id}</p>
+                    <p>Booking ID: {payment.b_id}</p>
+                    <p>CS ID: {payment.cs_id}</p>
+                    <p>Customer ID: {payment.c_id}</p>
+                    <p>Payment Date: {payment.p_date}</p>
+                  </div>
                 </div>
               </div>
             ))}

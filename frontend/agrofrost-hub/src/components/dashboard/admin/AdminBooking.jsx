@@ -15,6 +15,7 @@ function AdminBooking() {
     cs_id: "",
     checkInDate: "",
     checkOutDate: "",
+    b_status: "",
   });
 
   useEffect(() => {
@@ -29,6 +30,23 @@ function AdminBooking() {
           `${endpoint}/admin/booking/all`,
           config
         );
+
+        // Sort bookings by status with Cancelled and Visited at the end
+        response.data.sort((a, b) => {
+          if (a.b_status === "Cancelled" && b.b_status !== "Cancelled") {
+            return 1;
+          }
+          if (b.b_status === "Cancelled" && a.b_status !== "Cancelled") {
+            return -1;
+          }
+          if (a.b_status === "Visited" && b.b_status !== "Visited") {
+            return 1;
+          }
+          if (b.b_status === "Visited" && a.b_status !== "Visited") {
+            return -1;
+          }
+          return 0;
+        });
 
         setBookingData(response?.data);
         setBookingFilterData(response?.data);
@@ -63,7 +81,8 @@ function AdminBooking() {
         booking.c_id.includes(filters.c_id) &&
         booking.cs_id.includes(filters.cs_id) &&
         booking.b_checkInDate.includes(filters.checkInDate) &&
-        booking.b_checkOutDate.includes(filters.checkOutDate)
+        booking.b_checkOutDate.includes(filters.checkOutDate) &&
+        booking.b_status.includes(filters.b_status)
       );
     });
     setBookingFilterData(filteredData);
@@ -103,6 +122,19 @@ function AdminBooking() {
         theme: "light",
         transition: Bounce,
       });
+    }
+  };
+
+  const getStatusColorClass = (status) => {
+    switch (status) {
+      case "Booked":
+        return "text-blue-500 border border-blue-600 px-2 rounded-lg";
+      case "Cancelled":
+        return "text-red-500 border border-red-600 px-2 rounded-lg";
+      case "Visited":
+        return "text-green-500 border border-green-600 px-2 rounded-lg";
+      default:
+        return "text-gray-500 border border-gray-600 px-2 rounded-lg";
     }
   };
   return (
@@ -167,6 +199,17 @@ function AdminBooking() {
               placeholder="Check-Out Date"
               className="border border-gray-300 rounded-md px-3 py-2"
             />
+
+            <select
+              name="b_status"
+              onChange={handleFilterChange}
+              className="border border-gray-300 rounded-md px-3 py-2"
+            >
+              <option value="">All</option>
+              <option value="Booked">Booked</option>
+              <option value="Visited">Visited</option>
+              <option value="Cancelled">Cancelled</option>
+            </select>
           </div>
         </div>
         {/* Display Bookings */}
@@ -178,7 +221,13 @@ function AdminBooking() {
                 key={booking._id}
                 className="border hover:bg-greenpallete border-greenpallete bg-white rounded-md p-4 mb-4 shadow-lg"
               >
-                <div className="flex gap-3 items-center">
+                <div className="flex gap-3 items-center relative">
+                  <div className="absolute top-0 right-0">
+                    <span className={getStatusColorClass(booking.b_status)}>
+                      {booking.b_status}
+                    </span>
+                  </div>
+
                   <div>
                     <img
                       src="/src/assets/boxes.png"

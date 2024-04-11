@@ -5,6 +5,7 @@ import { Bounce, ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { Bar, Line, Doughnut, PolarArea, Pie } from "react-chartjs-2";
 import { Chart, registerables } from "chart.js";
+import AllReportOwner from "./AllReportOwner";
 Chart.register(...registerables);
 
 function OwnerOverview() {
@@ -12,6 +13,7 @@ function OwnerOverview() {
   const user = JSON.parse(localStorage.getItem("user"));
   const endpoint = `${import.meta.env.VITE_KEY}`;
   const [chartData, setChartData] = useState([]);
+  const [capacity, setCapacity] = useState("");
 
   useEffect(() => {
     const fetchColdStorageProfile = async () => {
@@ -27,6 +29,7 @@ function OwnerOverview() {
         );
 
         fetchChartData(response?.data?.cs_id);
+        handleCheckOutCapaCity(response?.data?.cs_id);
       } catch (error) {
         console.error("Error fetching data:", error);
       }
@@ -34,6 +37,34 @@ function OwnerOverview() {
 
     fetchColdStorageProfile();
   }, [user?.id]);
+
+  const handleCheckOutCapaCity = async (cs_id) => {
+    try {
+      const response = await axios.get(
+        `${endpoint}/user/capacity/current/${cs_id}`,
+        {},
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      setCapacity(response?.data?.remainingCapacity);
+    } catch (error) {
+      toast.error(error?.response?.data?.error, {
+        position: "top-center",
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+        progress: undefined,
+        theme: "light",
+        transition: Bounce,
+      });
+    }
+  };
 
   const fetchChartData = async (cs_id) => {
     const config = {
@@ -48,7 +79,6 @@ function OwnerOverview() {
       );
 
       setChartData(response?.data);
-      console.log(response?.data);
     } catch (error) {
       console.error("Error fetching data:", error);
       toast.error(error?.response?.data?.error, {
@@ -121,6 +151,54 @@ function OwnerOverview() {
     ],
   };
 
+  const statusData = Object.entries(bookingStatusData).reduce(
+    (acc, [key, value]) => {
+      const [cs_id, status, month, year] = key.split("_");
+      const label = `${cs_id}_${status}_${month}_${year}`;
+      if (!acc.labels.includes(label)) {
+        acc.labels.push(label);
+        acc.visited.push(status === "Visited" ? value : 0);
+        acc.cancelled.push(status === "Cancelled" ? value : 0);
+        acc.booked.push(status === "Booked" ? value : 0);
+      } else {
+        const index = acc.labels.indexOf(label);
+        acc.visited[index] += status === "Visited" ? value : 0;
+        acc.cancelled[index] += status === "Cancelled" ? value : 0;
+        acc.booked[index] += status === "Booked" ? value : 0;
+      }
+      return acc;
+    },
+    {
+      labels: [],
+      visited: [],
+      cancelled: [],
+      booked: [],
+    }
+  );
+
+  const statusChartData = {
+    labels: statusData.labels,
+    datasets: [
+      {
+        label: "Visited",
+        backgroundColor: "rgba(75,192,192,1)",
+        borderWidth: 2,
+        data: statusData.visited,
+      },
+      {
+        label: "Cancelled",
+        backgroundColor: "rgba(255,99,132,1)",
+        borderWidth: 2,
+        data: statusData.cancelled,
+      },
+      {
+        label: "Booked",
+        backgroundColor: "rgba(54, 162, 235, 1)",
+        borderWidth: 2,
+        data: statusData.booked,
+      },
+    ],
+  };
   return (
     <>
       <ToastContainer
@@ -174,6 +252,17 @@ function OwnerOverview() {
                 <p>Last Payment by</p>
               </div>
             </div>
+
+            {/* Capacity */}
+            <div className="flex gap-6 p-3 rounded-md items-center shadow-lg border border-greenpallete bg-white hover:bg-greenpallete">
+              <img src="/src/assets/capacity.png" className="w-24 h-24" />
+              <div>
+                <p className="text-3xl font-bold break-words text-wrap md:text-2xl lg:text-3xl xl:text-4xl">
+                  {capacity || 0} <sub className="text-sm">tons</sub>
+                </p>
+                <p>Capacity (current)</p>
+              </div>
+            </div>
           </div>
 
           {/* Chart Grid Payment Data and Booking Data */}
@@ -195,8 +284,20 @@ function OwnerOverview() {
               <h3 className="text-lg font-semibold mb-2">Combined Data</h3>
               {combinedChartData && <Line data={combinedChartData} />}
             </div>
+
+            {/* Booking Status Data Chart */}
+            <div className="p-4 bg-white rounded-lg border border-gray-300 shadow-md">
+              <h3 className="text-lg font-semibold mb-2">
+                Booking Status Data
+              </h3>
+              {statusChartData && <Bar data={statusChartData} />}
+            </div>
           </div>
         </div>
+
+        <br />
+
+        <AllReportOwner />
       </div>
     </>
   );

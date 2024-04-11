@@ -5,6 +5,7 @@ import { Bounce, ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { Bar, Line, Doughnut, PolarArea, Pie } from "react-chartjs-2";
 import { Chart, registerables } from "chart.js";
+import UserAllReports from "./UserAllReports";
 Chart.register(...registerables);
 
 function UserOverView() {
@@ -82,6 +83,58 @@ function UserOverView() {
       },
     ],
   };
+
+  // Extracting data for bookingStatusData
+  const statusLabels = chartData?.bookingStatusData?.map(
+    (data) => `${data.cs_id} - ${data.month}/${data.year}`
+  );
+
+  // Initialize arrays to hold count data for each status
+  const visitedData = [];
+  const bookedData = [];
+  const cancelledData = [];
+
+  // Loop through the bookingStatusData to populate count data for each status
+  chartData?.bookingStatusData?.forEach((data) => {
+    if (data.status === "Visited") {
+      visitedData.push(data.count);
+      bookedData.push(0); // Add 0 for Booked and Cancelled if not available for this cs_id
+      cancelledData.push(0);
+    } else if (data.status === "Booked") {
+      bookedData.push(data.count);
+      visitedData.push(0);
+      cancelledData.push(0);
+    } else if (data.status === "Cancelled") {
+      cancelledData.push(data.count);
+      visitedData.push(0);
+      bookedData.push(0);
+    }
+  });
+
+  const statusChartData = {
+    labels: statusLabels,
+    datasets: [
+      {
+        label: "Visited",
+        backgroundColor: "rgba(75,192,192,1)",
+        borderWidth: 2,
+        data: visitedData,
+      },
+      {
+        label: "Booked",
+        backgroundColor: "rgba(255,99,132,1)",
+        borderWidth: 2,
+        data: bookedData,
+      },
+      {
+        label: "Cancelled",
+        backgroundColor: "rgba(54, 162, 235, 1)",
+        borderWidth: 2,
+        data: cancelledData,
+      },
+    ],
+  };
+
   return (
     <>
       <ToastContainer
@@ -151,8 +204,19 @@ function UserOverView() {
               <h3 className="text-lg font-semibold mb-2">Payment Data</h3>
               {paymentChartData && <Bar data={paymentChartData} />}
             </div>
+
+            <div className="p-4 bg-white rounded-lg border border-gray-300 shadow-md">
+              <h3 className="text-lg font-semibold mb-2">Booking Status</h3>
+              {statusChartData && <Bar data={statusChartData} />}
+            </div>
           </div>
         </div>
+
+        <br />
+        <hr />
+        <br />
+
+        <UserAllReports />
       </div>
     </>
   );

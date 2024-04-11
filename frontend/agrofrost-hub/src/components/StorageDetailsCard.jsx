@@ -114,7 +114,7 @@ function StorageDetailsCard() {
         {filteredAndSortedData.map((item, index) => (
           <div
             key={index}
-            className="bg-white p-3 rounded-xl shadow shadow-lightgreenpallete border-greenpallete border-2"
+            className="bg-white p-3 rounded-xl  shadow-md border-gray-200 border-2 hover:border-greenpallete"
           >
             <img
               src={`${endpoint}/user/images/${item.cs_image}`}

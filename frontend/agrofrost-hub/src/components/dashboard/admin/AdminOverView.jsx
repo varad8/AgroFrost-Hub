@@ -5,6 +5,7 @@ import { Bounce, ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { Bar, Line, Doughnut, PolarArea, Pie } from "react-chartjs-2";
 import { Chart, registerables } from "chart.js";
+import AllReports from "./AllReports";
 Chart.register(...registerables);
 
 function AdminOverView() {
@@ -108,6 +109,35 @@ function AdminOverView() {
     ],
   };
 
+  const BookingStatusChart = {
+    labels: ["Cancelled", "Visited", "Booked"],
+    datasets: [
+      {
+        label: "Count Data",
+        data: [
+          countData?.bookingStatusCounts?.Cancelled || 0,
+          countData?.bookingStatusCounts?.Visited || 0,
+          countData?.bookingStatusCounts?.Booked || 0,
+        ],
+        backgroundColor: [
+          "rgba(255, 99, 132, 0.6)",
+          "rgba(54, 162, 235, 0.6)",
+          "rgba(255, 206, 86, 0.6)",
+          "rgba(75, 192, 192, 0.6)",
+          "rgba(153, 102, 255, 0.6)",
+        ],
+        borderColor: [
+          "rgba(255, 99, 132, 1)",
+          "rgba(54, 162, 235, 1)",
+          "rgba(255, 206, 86, 1)",
+          "rgba(75, 192, 192, 1)",
+          "rgba(153, 102, 255, 1)",
+        ],
+        borderWidth: 1,
+      },
+    ],
+  };
+
   const bookingData = {
     labels: chartData?.bookingData?.map(
       (data) => `${data.year} - ${data.cs_id}`
@@ -134,6 +164,57 @@ function AdminOverView() {
         backgroundColor: "rgba(54, 162, 235, 0.6)",
         borderColor: "rgba(54, 162, 235, 1)",
         borderWidth: 1,
+      },
+    ],
+  };
+
+  // Extracting data for bookingStatusData
+  const statusLabels = chartData?.bookingStatusData?.map(
+    (data) => `${data.cs_id} - ${data.month}/${data.year}`
+  );
+
+  // Initialize arrays to hold count data for each status
+  const visitedData = [];
+  const bookedData = [];
+  const cancelledData = [];
+
+  // Loop through the bookingStatusData to populate count data for each status
+  chartData?.bookingStatusData?.forEach((data) => {
+    if (data.status === "Visited") {
+      visitedData.push(data.count);
+      bookedData.push(0); // Add 0 for Booked and Cancelled if not available for this cs_id
+      cancelledData.push(0);
+    } else if (data.status === "Booked") {
+      bookedData.push(data.count);
+      visitedData.push(0);
+      cancelledData.push(0);
+    } else if (data.status === "Cancelled") {
+      cancelledData.push(data.count);
+      visitedData.push(0);
+      bookedData.push(0);
+    }
+  });
+
+  const statusChartData = {
+    labels: statusLabels,
+    datasets: [
+      {
+        label: "Visited",
+        backgroundColor: "rgba(75,192,192,1)",
+        borderWidth: 2,
+        data: visitedData,
+      },
+      {
+        label: "Booked",
+        backgroundColor: "rgba(255,99,132,1)",
+        borderWidth: 2,
+        data: bookedData,
+      },
+      {
+        label: "Cancelled",
+        backgroundColor: "rgba(54, 162, 235, 1)",
+        borderWidth: 2,
+        data: cancelledData,
       },
     ],
   };
@@ -224,6 +305,10 @@ function AdminOverView() {
               <Doughnut data={pieChartData} />
             </div>
 
+            <div className="p-4 bg-white rounded-lg border border-gray-300 shadow-md">
+              <h3 className="text-lg font-semibold mb-2">Booking Status</h3>
+              <Doughnut data={BookingStatusChart} />
+            </div>
             {/* Booking Data Chart */}
             <div className="p-4 bg-white rounded-lg border border-gray-300 shadow-md">
               <h3 className="text-lg font-semibold mb-2">Booking Data</h3>
@@ -234,7 +319,15 @@ function AdminOverView() {
               <h3 className="text-lg font-semibold mb-2">Payment Data</h3>
               <Bar data={paymentData} />
             </div>
+
+            <div className="p-4 bg-white rounded-lg border border-gray-300 shadow-md">
+              <h3 className="text-lg font-semibold mb-2">Booking Status</h3>
+              {statusChartData && <Bar data={statusChartData} />}
+            </div>
           </div>
+
+          <hr className="mt-3 mb-3" />
+          <AllReports />
         </div>
       </div>
     </>

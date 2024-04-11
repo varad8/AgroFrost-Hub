@@ -15,41 +15,58 @@ function UserBooking() {
     cs_id: "",
     checkInDate: "",
     checkOutDate: "",
+    b_status: "",
   });
 
   useEffect(() => {
-    const fetchBooking = async () => {
-      const config = {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      };
-      try {
-        const response = await axios.get(
-          `${endpoint}/user/booking/${user?.uid}`,
-          config
-        );
-
-        setBookingData(response?.data);
-        setBookingFilterData(response?.data);
-      } catch (error) {
-        console.error("Error fetching data:", error);
-        toast.error(error?.response?.data?.error, {
-          position: "top-center",
-          autoClose: 5000,
-          hideProgressBar: false,
-          closeOnClick: true,
-          pauseOnHover: true,
-          draggable: true,
-          progress: undefined,
-          theme: "light",
-          transition: Bounce,
-        });
-      }
-    };
-
     fetchBooking();
   }, [user?.id]);
+
+  const fetchBooking = async () => {
+    const config = {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    };
+    try {
+      const response = await axios.get(
+        `${endpoint}/user/booking/${user?.uid}`,
+        config
+      );
+
+      // Sort bookings by status with Cancelled and Visited at the end
+      response.data.sort((a, b) => {
+        if (a.b_status === "Cancelled" && b.b_status !== "Cancelled") {
+          return 1;
+        }
+        if (b.b_status === "Cancelled" && a.b_status !== "Cancelled") {
+          return -1;
+        }
+        if (a.b_status === "Visited" && b.b_status !== "Visited") {
+          return 1;
+        }
+        if (b.b_status === "Visited" && a.b_status !== "Visited") {
+          return -1;
+        }
+        return 0;
+      });
+
+      setBookingData(response.data);
+      setBookingFilterData(response.data);
+    } catch (error) {
+      toast.error(error?.response?.data?.error, {
+        position: "top-center",
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+        progress: undefined,
+        theme: "light",
+        transition: Bounce,
+      });
+    }
+  };
 
   const handleFilterChange = (e) => {
     const { name, value } = e.target;
@@ -63,7 +80,8 @@ function UserBooking() {
         booking.c_id.includes(filters.c_id) &&
         booking.cs_id.includes(filters.cs_id) &&
         booking.b_checkInDate.includes(filters.checkInDate) &&
-        booking.b_checkOutDate.includes(filters.checkOutDate)
+        booking.b_checkOutDate.includes(filters.checkOutDate) &&
+        booking.b_status.includes(filters.b_status)
       );
     });
     setBookingFilterData(filteredData);
@@ -103,6 +121,61 @@ function UserBooking() {
         theme: "light",
         transition: Bounce,
       });
+    }
+  };
+
+  const handleChangeCancel = async (b_id) => {
+    try {
+      const response = await axios.put(
+        `${endpoint}/user/booking/${b_id}/status`,
+        {
+          b_status: "Cancelled",
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      fetchBooking();
+
+      toast.success(response?.data?.message, {
+        position: "top-center",
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+        progress: undefined,
+        theme: "light",
+        transition: Bounce,
+      });
+    } catch (error) {
+      toast.error(error?.response?.data?.error, {
+        position: "top-center",
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+        progress: undefined,
+        theme: "light",
+        transition: Bounce,
+      });
+    }
+  };
+
+  const getStatusColorClass = (status) => {
+    switch (status) {
+      case "Booked":
+        return "text-blue-500 border border-blue-600 px-2 rounded-lg";
+      case "Cancelled":
+        return "text-red-500 border border-red-600 px-2 rounded-lg";
+      case "Visited":
+        return "text-green-500 border border-green-600 px-2 rounded-lg";
+      default:
+        return "text-gray-500 border border-gray-600 px-2 rounded-lg";
     }
   };
 
@@ -168,6 +241,17 @@ function UserBooking() {
               placeholder="Check-Out Date"
               className="border border-gray-300 rounded-md px-3 py-2"
             />
+
+            <select
+              name="b_status"
+              onChange={handleFilterChange}
+              className="border border-gray-300 rounded-md px-3 py-2"
+            >
+              <option value="">All</option>
+              <option value="Booked">Booked</option>
+              <option value="Visited">Visited</option>
+              <option value="Cancelled">Cancelled</option>
+            </select>
           </div>
         </div>
         {/* Display Bookings */}
@@ -179,7 +263,13 @@ function UserBooking() {
                 key={booking._id}
                 className="border hover:bg-greenpallete border-greenpallete bg-white rounded-md p-4 mb-4 shadow-lg"
               >
-                <div className="flex gap-3 items-center">
+                <div className="flex gap-3 items-center relative">
+                  <div className="absolute top-0 right-0">
+                    <span className={getStatusColorClass(booking.b_status)}>
+                      {booking.b_status}
+                    </span>
+                  </div>
+
                   <div>
                     <img
                       src="/src/assets/boxes.png"
@@ -202,6 +292,15 @@ function UserBooking() {
                     <p>Check-In Date: {booking.b_checkInDate}</p>
                     <p>Check-Out Date: {booking.b_checkOutDate}</p>
                     <p>Goods Quantity: {booking.b_goodsQuantity}</p>
+
+                    {booking.b_status === "Booked" && (
+                      <button
+                        onClick={() => handleChangeCancel(booking.b_id)}
+                        className="mt-2 mb-2 bg-red-600 hover:bg-red-700 text-white rounded-lg px-3 py-2"
+                      >
+                        Cancel
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>

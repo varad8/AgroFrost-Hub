@@ -2,16 +2,16 @@ import React from "react";
 
 function About() {
   return (
-    <section className="py-12 bg-gray-100" id="about">
+    <section className="py-12 bg-white" id="about">
       <div className="container mx-auto px-4">
         <h2 className="text-3xl font-bold text-center mb-8">About Us</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
           {/* Left Content */}
           <div>
             <img
-              src="/src/assets/aboutcd.png"
+              src="/src/assets/aboutcs.jpg"
               alt="About Us"
-              className="w-full rounded-lg"
+              className="w-full rounded-lg shadow-lg"
             />
           </div>
           {/* Right Content */}

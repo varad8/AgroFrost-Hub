@@ -17,6 +17,7 @@ function CsDetails() {
   const user = JSON.parse(localStorage.getItem("user"));
   const endpoint = `${import.meta.env.VITE_KEY}`;
   const [isOpen, setIsOpen] = useState(false);
+  const [capacity, setCapacity] = useState("");
   const [formData, setFormData] = useState({
     b_checkInDate: "",
     b_checkOutDate: "",
@@ -236,6 +237,34 @@ function CsDetails() {
     }
   };
 
+  const handleCheckOutCapaCity = async () => {
+    try {
+      const response = await axios.get(
+        `${endpoint}/user/capacity/${storageData?.cs_id}?startDate=${formData?.b_checkInDate}&endDate=${formData?.b_checkOutDate}`,
+        {},
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      setCapacity(response?.data?.remainingCapacity);
+    } catch (error) {
+      toast.error(error?.response?.data?.error, {
+        position: "top-center",
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+        progress: undefined,
+        theme: "light",
+        transition: Bounce,
+      });
+    }
+  };
+
   return (
     <>
       <div className="container mx-auto bg-white  py-10 overflow-hidden p-2">
@@ -271,8 +300,8 @@ function CsDetails() {
                 <FontAwesomeIcon
                   icon={faBoxOpen}
                   className="w-8 h-8 text-yellowpallete"
-                />{" "}
-                Capacity : {storageData.cs_capacity} <sup>m3</sup>
+                />
+                Capacity : {storageData.cs_capacity} <sup>tons</sup>
               </p>
             </div>
             <FontAwesomeIcon
@@ -343,6 +372,10 @@ function CsDetails() {
               <form onSubmit={handleSubmit}>
                 <div className="p-6">
                   <h1 className="text-xl font-bold mb-4">Booking Details</h1>
+
+                  <h3 className="text-lg font-bold mb-2">
+                    Available Capacity {capacity} (in tons)
+                  </h3>
                   <div className="mb-4">
                     <label htmlFor="checkInDate" className="block mb-1">
                       Check-in Date
@@ -387,12 +420,20 @@ function CsDetails() {
                     />
                   </div>
 
-                  <div className="flex justify-end">
+                  <div className="flex justify-between items-center">
                     <button
                       type="submit"
                       className="bg-yellowpallete text-white px-4 py-2 rounded-md hover:bg-yellowpallete focus:outline-none focus:bg-yellowpallete"
                     >
                       Submit
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleCheckOutCapaCity}
+                      className="bg-indigo-500 text-white px-4 py-2 rounded-md hover:bg-indigo-600 focus:outline-none focus:bg-yellowpallete"
+                    >
+                      Check Capacity
                     </button>
                     <button
                       type="button"

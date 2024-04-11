@@ -25,7 +25,11 @@ const BookingSchema = new mongoose.Schema({
   b_goodsQuantity: {
     type: Number,
     required: true,
-    max: 15,
+  },
+  b_status: {
+    type: String,
+    required: true,
+    default: "Booked",
   },
 });
 
