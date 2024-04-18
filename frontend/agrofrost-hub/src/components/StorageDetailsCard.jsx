@@ -23,7 +23,6 @@ function StorageDetailsCard() {
   }, [token]);
 
   const fetchStorageDetails = async () => {
-    console.log(token);
     try {
       const config = {
         headers: {

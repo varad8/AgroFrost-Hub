@@ -79,6 +79,7 @@ function OwnerOverview() {
       );
 
       setChartData(response?.data);
+      console.log(response?.data);
     } catch (error) {
       console.error("Error fetching data:", error);
       toast.error(error?.response?.data?.error, {
@@ -151,54 +152,57 @@ function OwnerOverview() {
     ],
   };
 
-  const statusData = Object.entries(bookingStatusData).reduce(
-    (acc, [key, value]) => {
-      const [cs_id, status, month, year] = key.split("_");
-      const label = `${cs_id}_${status}_${month}_${year}`;
-      if (!acc.labels.includes(label)) {
-        acc.labels.push(label);
-        acc.visited.push(status === "Visited" ? value : 0);
-        acc.cancelled.push(status === "Cancelled" ? value : 0);
-        acc.booked.push(status === "Booked" ? value : 0);
-      } else {
-        const index = acc.labels.indexOf(label);
-        acc.visited[index] += status === "Visited" ? value : 0;
-        acc.cancelled[index] += status === "Cancelled" ? value : 0;
-        acc.booked[index] += status === "Booked" ? value : 0;
-      }
-      return acc;
-    },
-    {
-      labels: [],
-      visited: [],
-      cancelled: [],
-      booked: [],
-    }
+  // Extracting data for bookingStatusData
+  const statusLabels = chartData?.bookingStatusData?.map(
+    (data) => `${data.month}/${data.year}`
   );
 
+  // Initialize arrays to hold count data for each status
+  const visitedData = [];
+  const bookedData = [];
+  const cancelledData = [];
+
+  // Loop through the bookingStatusData to populate count data for each status
+  chartData?.bookingStatusData?.forEach((data) => {
+    if (data.status === "Visited") {
+      visitedData.push(data.count);
+      bookedData.push(0); // Add 0 for Booked and Cancelled if not available for this cs_id
+      cancelledData.push(0);
+    } else if (data.status === "Booked") {
+      bookedData.push(data.count);
+      visitedData.push(0);
+      cancelledData.push(0);
+    } else if (data.status === "Cancelled") {
+      cancelledData.push(data.count);
+      visitedData.push(0);
+      bookedData.push(0);
+    }
+  });
+
   const statusChartData = {
-    labels: statusData.labels,
+    labels: statusLabels,
     datasets: [
       {
         label: "Visited",
         backgroundColor: "rgba(75,192,192,1)",
         borderWidth: 2,
-        data: statusData.visited,
-      },
-      {
-        label: "Cancelled",
-        backgroundColor: "rgba(255,99,132,1)",
-        borderWidth: 2,
-        data: statusData.cancelled,
+        data: visitedData,
       },
       {
         label: "Booked",
+        backgroundColor: "rgba(255,99,132,1)",
+        borderWidth: 2,
+        data: bookedData,
+      },
+      {
+        label: "Cancelled",
         backgroundColor: "rgba(54, 162, 235, 1)",
         borderWidth: 2,
-        data: statusData.booked,
+        data: cancelledData,
       },
     ],
   };
+
   return (
     <>
       <ToastContainer

@@ -658,15 +658,12 @@ router.post("/change-password", async (req, res) => {
 });
 
 /**--------------------[Routes for Reports]------------------- */
-
+// Route for weekly report
 router.get("/reports/weekly", authenticateToken, async (req, res) => {
   try {
-    const today = new Date();
-    const oneWeekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
     const weeklyData = await Booking.aggregate([
       {
         $match: {
-          b_checkInDate: { $gte: oneWeekAgo, $lte: today },
           b_status: { $in: ["Visited", "Booked"] },
         },
       },
@@ -678,6 +675,15 @@ router.get("/reports/weekly", authenticateToken, async (req, res) => {
           as: "payments",
         },
       },
+      {
+        $sort: { b_checkInDate: -1 }, // Sort by check-in date in descending order
+      },
+      {
+        $limit: 7, // Limit to the last 7 records
+      },
+      {
+        $sort: { b_checkInDate: 1 }, // Sort by check-in date in ascending order to restore the original order
+      },
     ]);
     res.json({ weeklyData });
   } catch (error) {
@@ -688,16 +694,9 @@ router.get("/reports/weekly", authenticateToken, async (req, res) => {
 // Route for monthly report
 router.get("/reports/monthly", authenticateToken, async (req, res) => {
   try {
-    const today = new Date();
-    const oneMonthAgo = new Date(
-      today.getFullYear(),
-      today.getMonth() - 1,
-      today.getDate()
-    );
     const monthlyData = await Booking.aggregate([
       {
         $match: {
-          b_checkInDate: { $gte: oneMonthAgo, $lte: today },
           b_status: { $in: ["Visited", "Booked"] },
         },
       },
@@ -719,16 +718,9 @@ router.get("/reports/monthly", authenticateToken, async (req, res) => {
 // Route for yearly report
 router.get("/reports/yearly", authenticateToken, async (req, res) => {
   try {
-    const today = new Date();
-    const oneYearAgo = new Date(
-      today.getFullYear() - 1,
-      today.getMonth(),
-      today.getDate()
-    );
     const yearlyData = await Booking.aggregate([
       {
         $match: {
-          b_checkInDate: { $gte: oneYearAgo, $lte: today },
           b_status: { $in: ["Visited", "Booked"] },
         },
       },

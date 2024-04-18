@@ -52,21 +52,32 @@ async function generateCustomerId() {
 
   return `CSREG-${nextRegistrationNumber}`;
 }
-
-//Generate Booking Id
+// Generate Booking Id
 async function generateBookingId() {
-  const lastBooking = await Booking.findOne().sort({
-    b_id: -1,
-  });
-  let nextBookingNumber = 1;
-  if (lastBooking) {
-    const lastBookingNumber = parseInt(lastBooking.b_id.split("-")[1]);
-    if (!isNaN(lastBookingNumber)) {
-      nextBookingNumber = lastBookingNumber + 1;
-    }
-  }
+  try {
+    // Find the latest booking
+    const latestBooking = await Booking.findOne().sort({ b_id: -1 });
 
-  return `BKID-${nextBookingNumber}`;
+    console.log(latestBooking);
+
+    let newSerialNumber;
+    if (latestBooking) {
+      // Extract the serial number from the latest BKID and increment it
+      const serialNumber = parseInt(latestBooking.b_id.split("-")[1]);
+      newSerialNumber = serialNumber + 1;
+    } else {
+      // If no bookings exist yet, start with 1
+      newSerialNumber = 1;
+    }
+
+    const newBkid = `BKID-${newSerialNumber}`;
+
+    return newBkid;
+  } catch (error) {
+    // Handle any errors
+    console.error("Error generating BKID:", error);
+    throw error;
+  }
 }
 
 // Customer Registration
@@ -470,8 +481,10 @@ router.put("/booking/:b_id/status", authenticateToken, async (req, res) => {
     const updatedBooking = await Booking.findOneAndUpdate(
       { b_id },
       { $set: { b_status } },
-      { new: true } // Return the updated document
+      { new: true }
     );
+
+    console.log(updatedBooking);
 
     if (!updatedBooking) {
       return res.status(404).json({ message: "Booking not found" });
@@ -1103,17 +1116,15 @@ router.get("/capacity/current/:cs_id", async (req, res) => {
   }
 });
 
-/**------------------------[Reports Router]--------------------- */
 // Route for weekly report with mandatory c_id filter
+
 router.get("/reports/weekly/:c_id", authenticateToken, async (req, res) => {
   try {
     const { c_id } = req.params; // Get c_id from URL parameter
-    const today = new Date();
-    const oneWeekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+
     const weeklyData = await Booking.aggregate([
       {
         $match: {
-          b_checkInDate: { $gte: oneWeekAgo, $lte: today },
           c_id: c_id, // Filter by c_id
           b_status: { $in: ["Visited", "Booked"] },
         },
@@ -1125,6 +1136,15 @@ router.get("/reports/weekly/:c_id", authenticateToken, async (req, res) => {
           foreignField: "b_id",
           as: "payments",
         },
+      },
+      {
+        $sort: { b_checkInDate: -1 }, // Sort by check-in date in descending order
+      },
+      {
+        $limit: 7, // Limit to the last 7 records
+      },
+      {
+        $sort: { b_checkInDate: 1 }, // Sort by check-in date in ascending order to restore the original order
       },
     ]);
     res.json({ weeklyData });
@@ -1138,15 +1158,12 @@ router.get("/reports/monthly/:c_id", authenticateToken, async (req, res) => {
   try {
     const { c_id } = req.params; // Get c_id from URL parameter
     const today = new Date();
-    const oneMonthAgo = new Date(
-      today.getFullYear(),
-      today.getMonth() - 1,
-      today.getDate()
-    );
+    const startDate = new Date(today.getFullYear(), today.getMonth(), 1);
+    const endDate = new Date(today.getFullYear(), today.getMonth() + 1, 0);
     const monthlyData = await Booking.aggregate([
       {
         $match: {
-          b_checkInDate: { $gte: oneMonthAgo, $lte: today },
+          b_checkInDate: { $gte: startDate, $lte: endDate },
           c_id: c_id, // Filter by c_id
           b_status: { $in: ["Visited", "Booked"] },
         },
@@ -1171,15 +1188,12 @@ router.get("/reports/yearly/:c_id", authenticateToken, async (req, res) => {
   try {
     const { c_id } = req.params; // Get c_id from URL parameter
     const today = new Date();
-    const oneYearAgo = new Date(
-      today.getFullYear() - 1,
-      today.getMonth(),
-      today.getDate()
-    );
+    const startDate = new Date(today.getFullYear(), 0, 1);
+    const endDate = new Date(today.getFullYear(), 11, 31);
     const yearlyData = await Booking.aggregate([
       {
         $match: {
-          b_checkInDate: { $gte: oneYearAgo, $lte: today },
+          b_checkInDate: { $gte: startDate, $lte: endDate },
           c_id: c_id,
           b_status: { $in: ["Visited", "Booked"] },
         },

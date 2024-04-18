@@ -846,12 +846,10 @@ router.post("/change-password", async (req, res) => {
 router.get("/reports/weekly/:cs_id", authenticateToken, async (req, res) => {
   try {
     const { cs_id } = req.params; // Get CS_ID from URL parameter
-    const today = new Date();
-    const oneWeekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+
     const weeklyData = await Booking.aggregate([
       {
         $match: {
-          b_checkInDate: { $gte: oneWeekAgo, $lte: today },
           cs_id: cs_id, // Filter by CS_ID
           b_status: { $in: ["Visited", "Booked"] },
         },
@@ -864,6 +862,15 @@ router.get("/reports/weekly/:cs_id", authenticateToken, async (req, res) => {
           as: "payments",
         },
       },
+      {
+        $sort: { b_checkInDate: -1 }, // Sort by check-in date in descending order
+      },
+      {
+        $limit: 7, // Limit to the last 7 records
+      },
+      {
+        $sort: { b_checkInDate: 1 }, // Sort by check-in date in ascending order to restore the original order
+      },
     ]);
     res.json({ weeklyData });
   } catch (error) {
@@ -875,16 +882,10 @@ router.get("/reports/weekly/:cs_id", authenticateToken, async (req, res) => {
 router.get("/reports/monthly/:cs_id", authenticateToken, async (req, res) => {
   try {
     const { cs_id } = req.params; // Get CS_ID from URL parameter
-    const today = new Date();
-    const oneMonthAgo = new Date(
-      today.getFullYear(),
-      today.getMonth() - 1,
-      today.getDate()
-    );
+
     const monthlyData = await Booking.aggregate([
       {
         $match: {
-          b_checkInDate: { $gte: oneMonthAgo, $lte: today },
           cs_id: cs_id, // Filter by CS_ID
           b_status: { $in: ["Visited", "Booked"] },
         },
@@ -908,16 +909,10 @@ router.get("/reports/monthly/:cs_id", authenticateToken, async (req, res) => {
 router.get("/reports/yearly/:cs_id", authenticateToken, async (req, res) => {
   try {
     const { cs_id } = req.params; // Get CS_ID from URL parameter
-    const today = new Date();
-    const oneYearAgo = new Date(
-      today.getFullYear() - 1,
-      today.getMonth(),
-      today.getDate()
-    );
+
     const yearlyData = await Booking.aggregate([
       {
         $match: {
-          b_checkInDate: { $gte: oneYearAgo, $lte: today },
           cs_id: cs_id,
           b_status: { $in: ["Visited", "Booked"] },
         },
@@ -932,75 +927,6 @@ router.get("/reports/yearly/:cs_id", authenticateToken, async (req, res) => {
       },
     ]);
     res.json({ yearlyData });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-});
-
-router.get("/reports/yearly/:year", authenticateToken, async (req, res) => {
-  try {
-    const { year } = req.params; // Get year from URL parameter
-    const { csId } = req.query; // Get CS_ID from query parameters
-
-    const startDate = new Date(year, 0, 1); // Start of the year
-    const endDate = new Date(year, 11, 31); // End of the year
-
-    const matchStage = {
-      $match: {
-        b_checkInDate: { $gte: startDate, $lte: endDate }, // Filter by year
-        cs_id: csId, // Filter by CS_ID
-        b_status: { $in: ["Visited", "Booked"] },
-      },
-    };
-
-    const yearlyData = await Booking.aggregate([
-      matchStage,
-      {
-        $lookup: {
-          from: "payments",
-          localField: "b_id",
-          foreignField: "b_id",
-          as: "payments",
-        },
-      },
-    ]);
-    res.json(yearlyData);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-});
-
-// Route for monthly report with optional CS_ID filter
-router.get("/reports/monthly/:year/:month", async (req, res) => {
-  try {
-    const { year, month } = req.params; // Get year and month from URL parameters
-    const { csId } = req.query; // Get CS_ID from query parameters
-
-    // Calculate the start and end dates for the specified month and year
-    const startDate = new Date(year, month - 1, 1); // Month is 0-indexed, so subtract 1
-    const endDate = new Date(year, month, 0); // Get the last day of the month
-
-    const matchStage = {
-      $match: {
-        b_checkInDate: { $gte: startDate, $lte: endDate }, // Filter by month and year
-        cs_id: csId, // Filter by CS_ID
-        b_status: { $in: ["Visited", "Booked"] },
-      },
-    };
-
-    const monthlyData = await Booking.aggregate([
-      matchStage,
-      {
-        $lookup: {
-          from: "payments",
-          localField: "b_id",
-          foreignField: "b_id",
-          as: "payments",
-        },
-      },
-    ]);
-
-    res.json(monthlyData);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
